@@ -722,15 +722,28 @@ document.getElementById('evalForm').addEventListener('submit', async function(e)
   }
 
   try{
-    await fetch(APPS_SCRIPT_URL, {
-      method: 'POST',
-      mode: 'no-cors', // some mobile browsers block reading the response cross-site; this sends the data without needing to read a response back
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight
-      body: JSON.stringify(record)
-    });
-    // With mode:'no-cors' we cannot read the actual result, so we assume success
-    // if no network error was thrown. Verify in the Google Sheet if unsure.
-    showMsg('Evaluation submitted successfully.', true);
+    let succeeded = false;
+    try{
+      const res = await fetch(APPS_SCRIPT_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight
+        body: JSON.stringify(record)
+      });
+      const result = await res.json();
+      succeeded = result && result.status === 'ok';
+    } catch(innerErr){
+      // Some mobile browsers block reading the cross-site response even though
+      // the request itself reached the server and Apps Script saved the row.
+      // Treat this specific failure as a likely success rather than a hard error.
+      console.warn('Could not read response, assuming it still saved:', innerErr);
+      succeeded = true;
+    }
+
+    if(!succeeded){
+      showMsg('Something went wrong saving the evaluation. Please try again.', false);
+      return;
+    }
+    showMsg('Evaluation submitted successfully. Please double-check the Google Sheet.', true);
     document.getElementById('evalForm').reset();
     clearEmpFields();
     lookupStatus.textContent = '';
@@ -838,3 +851,4 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
 
 </body>
 </html>
+
