@@ -259,6 +259,7 @@
 
   <div id="msgBanner" class="msg-banner"></div>
 
+  <iframe name="hiddenSubmitFrame" style="display:none;"></iframe>
   <form id="evalForm">
 
     <!-- HEADER -->
@@ -677,7 +678,7 @@ function showMsg(text, ok){
   setTimeout(()=>{ el.style.display='none'; }, 5000);
 }
 
-document.getElementById('evalForm').addEventListener('submit', async function(e){
+document.getElementById('evalForm').addEventListener('submit', function(e){
   e.preventDefault();
 
   const code = empCodeInput.value;
@@ -721,36 +722,35 @@ document.getElementById('evalForm').addEventListener('submit', async function(e)
     return;
   }
 
-  try{
-    let succeeded = false;
-    try{
-      const res = await fetch(APPS_SCRIPT_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain;charset=utf-8' }, // avoids CORS preflight
-        body: JSON.stringify(record)
-      });
-      const result = await res.json();
-      succeeded = result && result.status === 'ok';
-    } catch(innerErr){
-      // Some mobile browsers block reading the cross-site response even though
-      // the request itself reached the server and Apps Script saved the row.
-      // Treat this specific failure as a likely success rather than a hard error.
-      console.warn('Could not read response, assuming it still saved:', innerErr);
-      succeeded = true;
-    }
+  // Submit via a real hidden <form> POST targeting a hidden iframe.
+  // This is a plain browser form submission (not a fetch/XHR call), so it is
+  // NEVER subject to CORS or JS-level network blocking - the same mechanism
+  // any ordinary HTML <form> on the web has used for 25+ years.
+  const hiddenForm = document.createElement('form');
+  hiddenForm.method = 'POST';
+  hiddenForm.action = APPS_SCRIPT_URL;
+  hiddenForm.target = 'hiddenSubmitFrame';
+  hiddenForm.style.display = 'none';
 
-    if(!succeeded){
-      showMsg('Something went wrong saving the evaluation. Please try again.', false);
-      return;
-    }
-    showMsg('Evaluation submitted successfully. Please double-check the Google Sheet.', true);
-    document.getElementById('evalForm').reset();
-    clearEmpFields();
-    lookupStatus.textContent = '';
-  } catch(err){
-    console.error(err);
-    showMsg('Error saving evaluation: ' + err.message, false);
-  }
+  Object.keys(record).forEach(function(key){
+    const input = document.createElement('input');
+    input.type = 'hidden';
+    input.name = key;
+    input.value = record[key] === undefined || record[key] === null ? '' : String(record[key]);
+    hiddenForm.appendChild(input);
+  });
+
+  document.body.appendChild(hiddenForm);
+  hiddenForm.submit();
+  setTimeout(function(){ hiddenForm.remove(); }, 3000);
+
+  // We can't read the response back from a cross-site iframe target, so we
+  // optimistically confirm submission. Please verify periodically in the
+  // Google Sheet.
+  showMsg('Evaluation submitted. Please verify it appears in the Google Sheet shortly.', true);
+  document.getElementById('evalForm').reset();
+  clearEmpFields();
+  lookupStatus.textContent = '';
 });
 
 // ---- Records modal ----
@@ -851,4 +851,3 @@ document.getElementById('exportBtn').addEventListener('click', ()=>{
 
 </body>
 </html>
-
